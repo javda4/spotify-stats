@@ -92,6 +92,21 @@
   // ---------- tooltip & crosshair ----------
 
   const tooltipEl = document.getElementById("tooltip");
+  const isTouch = window.matchMedia("(hover: none)").matches;
+  let tooltipTimer;
+
+  /** Close the tooltip and clear every chart's active point (and the crosshair it draws). */
+  function hideTooltips() {
+    clearTimeout(tooltipTimer);
+    if (tooltipEl.hidden) return;
+    tooltipEl.hidden = true;
+    for (const chart of Object.values(state.charts)) {
+      if (!chart?.tooltip?.getActiveElements().length) continue;
+      chart.tooltip.setActiveElements([], { x: 0, y: 0 });
+      chart.setActiveElements([]);
+      chart.update("none");
+    }
+  }
 
   function externalTooltip({ chart, tooltip }) {
     if (!tooltip.opacity || !tooltip.dataPoints?.length) {
@@ -126,6 +141,8 @@
       }
     }
     tooltipEl.hidden = false;
+    clearTimeout(tooltipTimer);
+    if (isTouch) tooltipTimer = setTimeout(hideTooltips, 4000);
     const rect = chart.canvas.getBoundingClientRect();
     const x = rect.left + tooltip.caretX + 14;
     const y = rect.top + tooltip.caretY - 10;
@@ -176,6 +193,9 @@
       animation: false,
       indexAxis,
       interaction: { mode: indexAxis === "y" ? "nearest" : "index", intersect: indexAxis === "y", axis: indexAxis },
+      // No touchstart/touchmove: a thumb scrolling past a chart must not open its tooltip.
+      // On touch screens the tooltip opens on tap (click) instead.
+      events: ["mousemove", "mouseout", "click"],
       plugins: { legend: { display: false }, tooltip: { enabled: false, external: externalTooltip } },
       scales: indexAxis === "y" ? { x: valueAxis, y: catAxis } : { x: catAxis, y: valueAxis },
       font: { family: "system-ui, -apple-system, 'Segoe UI', sans-serif" },
@@ -1062,6 +1082,11 @@
     document.getElementById("share-search").addEventListener("input", renderSharePage);
     document.getElementById("share-include-top").addEventListener("change", renderSharePage);
     window.addEventListener("hashchange", route);
+    // The tooltip is position:fixed, so it would float in place while the page moves.
+    window.addEventListener("scroll", hideTooltips, { passive: true });
+    document.addEventListener("touchstart", (e) => {
+      if (!(e.target instanceof HTMLCanvasElement)) hideTooltips();
+    }, { passive: true });
   }
 
   async function init() {
