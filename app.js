@@ -9,6 +9,8 @@
 
   const state = {
     grain: "day",
+    trendGrain: "day",    // Overall trend card's own tab; follows the page grain when that changes
+    trendCache: {},       // grain -> overall_performance() result
     songs: [],            // song_latest rows
     artistSnaps: [],      // artist_snapshots rows, oldest first
     periodRows: new Map(),// track_id -> song_period_stats row for the current period
@@ -275,8 +277,70 @@
       tile(periodLabel + partial, current, deltaEl(pct(current, previous), noun), true),
       tile("All-time streams", latest.total_streams),
       tile(state.grain === "day" ? "Tracks" : "Average per day", state.grain === "day" ? latest.total_tracks : avgDaily),
-      tile("Average per song", latest.total_tracks && current != null ? Math.round(current / latest.total_tracks) : null),
+      trendTile(),
     );
+    renderTrendTile();
+  }
+
+  // ---------- overall trend card (Overall Performance Algorithm, docs/overall-performance-algorithm.md) ----------
+
+  const TREND_TABS = [["day", "D", "Daily"], ["week", "W", "Weekly"], ["month", "M", "Monthly"], ["year", "Y", "Yearly"]];
+  const TREND_WINDOW = {
+    day: () => "vs the previous day",
+    week: (r) => r.current.days === 7 ? "vs the previous week" : `week to date vs the same ${r.current.days} day${r.current.days > 1 ? "s" : ""} last week`,
+    month: (r) => `month to date vs the same ${r.current.days} days last month`,
+    year: (r) => `year to date vs the same ${r.current.days} days last year`,
+  };
+
+  function trendTile() {
+    const tabs = el("div", { className: "mini-tabs", role: "tablist", ariaLabel: "Trend period" },
+      ...TREND_TABS.map(([g, short, long]) => {
+        const b = el("button", { type: "button", role: "tab", textContent: short, title: long });
+        b.dataset.grain = g;
+        b.addEventListener("click", () => { state.trendGrain = g; renderTrendTile(); });
+        return b;
+      }));
+    return el("div", { className: "tile trend-tile", id: "trend-tile" },
+      el("div", { className: "trend-tile-head" }, el("div", { className: "label", textContent: "Overall trend" }), tabs),
+      el("div", { className: "value", id: "trend-value", textContent: "…" }),
+      el("div", { className: "delta", id: "trend-window" }),
+      el("div", { className: "trend-meta", id: "trend-meta" }));
+  }
+
+  async function renderTrendTile() {
+    const g = state.trendGrain;
+    document.querySelectorAll("#trend-tile .mini-tabs button").forEach((b) =>
+      b.setAttribute("aria-selected", String(b.dataset.grain === g)));
+    let r = state.trendCache[g];
+    if (!r) {
+      try { r = state.trendCache[g] = await rpc("overall_performance", { p_artist: artistId, p_grain: g }); }
+      catch (e) { r = { reason: "Couldn't load trend" }; }
+    }
+    if (state.trendGrain !== g || !document.getElementById("trend-value")) return; // tab changed meanwhile
+    const value = document.getElementById("trend-value");
+    const win = document.getElementById("trend-window");
+    const meta = document.getElementById("trend-meta");
+    value.className = "value";
+    if (r.change_pct == null) {
+      value.textContent = "–";
+      win.textContent = r.reason ?? "Not enough data yet";
+      meta.textContent = "";
+      return;
+    }
+    const icon = { up: "▲", down: "▼", steady: "●" }[r.status];
+    value.classList.add(r.status === "up" ? "up" : r.status === "down" ? "down" : "steady");
+    value.textContent = `${icon} ${r.change_pct >= 0 ? "+" : "−"}${Math.abs(r.change_pct).toFixed(1)}%`;
+    value.title = `Stream-weighted change across ${r.songs_included} songs (algorithm v${r.version})`;
+    win.textContent = `${r.status === "steady" ? "Steady, " : ""}${TREND_WINDOW[g](r)}`;
+    const driver = r.driven_by
+      ? `Mostly driven by ${r.driven_by.title} (${r.driven_by.share_pct}% of the movement)`
+      : (() => {
+          const top = (r.change_pct >= 0 ? r.top_up : r.top_down)[0];
+          return top ? `Top driver: ${top.title} (${top.points >= 0 ? "+" : "−"}${Math.abs(top.points).toFixed(2)} pts)` : "";
+        })();
+    meta.replaceChildren(
+      el("div", { textContent: driver }),
+      el("div", { textContent: `${r.songs_included} songs · ${r.coverage_pct}% of streams · weighted by volume` }));
   }
 
   // ---------- song filtering & current-period stats ----------
@@ -971,6 +1035,7 @@
     document.querySelectorAll("#grain button").forEach((btn) =>
       btn.addEventListener("click", () => {
         state.grain = btn.dataset.grain;
+        state.trendGrain = state.grain;
         document.querySelectorAll("#grain button").forEach((b) =>
           b.setAttribute("aria-checked", String(b === btn)),
         );
