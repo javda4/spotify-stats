@@ -100,8 +100,6 @@ h3 { font-size: 15px; margin: 0; font-weight: 600; }
 }
 .segmented button + button { border-left: 1px solid var(--border); }
 .segmented button[aria-checked="true"] { background: var(--accent); color: #fff; font-weight: 600; }
-.select { display: inline-flex; align-items: center; gap: 8px; }
-.select .muted { margin: 0; }
 select, input {
   font: inherit; color: var(--text-primary);
   background: var(--surface-1);
@@ -159,7 +157,6 @@ th[aria-sort="ascending"]::after { content: " ▴"; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: var(--page); }
-.tag { font-size: 11px; color: var(--text-muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 
 .tooltip {
   position: fixed; pointer-events: none; z-index: 20;

@@ -9,7 +9,6 @@
 
   const state = {
     grain: "day",
-    type: "all",
     songs: [],            // song_latest rows
     artistSnaps: [],      // artist_snapshots rows, oldest first
     periodRows: new Map(),// track_id -> song_period_stats row for the current period
@@ -237,24 +236,20 @@
       tiles.textContent = "No data yet — the first scrape hasn't run.";
       return;
     }
-    const totalKey = state.type === "all" ? "total" : state.type;
-    const streamsCol = `${totalKey}_streams`;
-
     let current, previous, avgDaily, daysTracked;
     if (state.grain === "day") {
-      current = latest[`${totalKey}_daily`];
-      previous = snaps.length > 1 ? snaps[snaps.length - 2][`${totalKey}_daily`] : null;
+      current = latest.total_daily;
+      previous = snaps.length > 1 ? snaps[snaps.length - 2].total_daily : null;
       avgDaily = current;
       daysTracked = snaps.length;
     } else {
       const rows = await api(
         `artist_period_stats?artist_id=eq.${artistId}&grain=eq.${state.grain}&order=period_start`,
       );
-      const key = (c) => (c === "total" ? "streams" : `${c}_streams`);
       const cur = rows[rows.length - 1];
       const prev = rows[rows.length - 2];
-      current = cur?.[key(totalKey)];
-      previous = prev?.[key(totalKey)] ?? null;
+      current = cur?.streams;
+      previous = prev?.streams ?? null;
       daysTracked = cur?.days_tracked;
       avgDaily = cur && current != null ? Math.round(current / cur.days_tracked) : null;
     }
@@ -278,18 +273,13 @@
     const partial = state.grain !== "day" && daysTracked ? ` (${daysTracked} day${daysTracked > 1 ? "s" : ""} tracked)` : "";
     tiles.replaceChildren(
       tile(periodLabel + partial, current, deltaEl(pct(current, previous), noun), true),
-      tile("All-time streams", latest[streamsCol]),
-      tile(state.grain === "day" ? "Tracks" : "Average per day", state.grain === "day" ? latest[`${totalKey}_tracks`] : avgDaily),
-      tile("Solo daily streams", latest.solo_daily),
+      tile("All-time streams", latest.total_streams),
+      tile(state.grain === "day" ? "Tracks" : "Average per day", state.grain === "day" ? latest.total_tracks : avgDaily),
+      tile("Average per song", latest.total_tracks && current != null ? Math.round(current / latest.total_tracks) : null),
     );
   }
 
   // ---------- song filtering & current-period stats ----------
-
-  const visibleSongs = () =>
-    state.songs.filter((s) =>
-      state.type === "all" ? true : state.type === "feature" ? s.is_feature : !s.is_feature,
-    );
 
   async function loadPeriodRows() {
     state.periodRows.clear();
@@ -316,7 +306,7 @@
     const noun = GRAIN_NOUN[state.grain];
     document.getElementById("period-col").textContent = state.grain === "day" ? "Latest day" : `This ${noun}`;
     const q = document.getElementById("table-search").value.trim().toLowerCase();
-    const rows = visibleSongs()
+    const rows = state.songs
       .filter((s) => !q || s.title.toLowerCase().includes(q))
       .map((s) => ({ ...s, period_streams: periodStats(s).streams, change: periodStats(s).change }));
     const { key, dir } = state.sort;
@@ -343,12 +333,6 @@
         const link = el("a", { textContent: s.title, href: `#/song/${s.track_id}`, className: "song-link", title: "Open song insights" });
         link.addEventListener("click", (e) => e.stopPropagation());
         title.append(link);
-        if (s.is_feature) {
-          const tag = document.createElement("span");
-          tag.className = "tag";
-          tag.textContent = "feature";
-          title.append(tag);
-        }
         const change = cell(s.change == null ? "–" : `${s.change >= 0 ? "▲" : "▼"} ${Math.abs(s.change).toFixed(1)}%`, "num");
         if (s.change != null) change.classList.add(s.change >= 0 ? "up" : "down");
         tr.append(
@@ -375,7 +359,7 @@
 
   /** Songs with daily streams, biggest first, and their share of the total. */
   function shareRanking() {
-    const songs = visibleSongs().filter((s) => s.daily_streams != null)
+    const songs = state.songs.filter((s) => s.daily_streams != null)
       .sort((a, b) => b.daily_streams - a.daily_streams);
     const total = songs.reduce((sum, s) => sum + s.daily_streams, 0);
     return { songs, total, share: (s) => (total ? (100 * s.daily_streams) / total : 0) };
@@ -884,7 +868,7 @@
     title.textContent = song.title;
     document.title = `${song.title} · Spotify Stats`;
     document.getElementById("song-meta").textContent =
-      `${song.is_feature ? "Featured artist" : "Lead artist"} · #${song.rank_total} by total streams · tracked since ${fmtDate(song.first_seen)}`;
+      `#${song.rank_total} by total streams · tracked since ${fmtDate(song.first_seen)}`;
     document.getElementById("song-spotify").href = `https://open.spotify.com/track/${id}`;
 
     const { songs, share } = shareRanking();
@@ -993,10 +977,6 @@
         renderAll();
       }),
     );
-    document.getElementById("type-filter").addEventListener("change", (e) => {
-      state.type = e.target.value;
-      renderAll();
-    });
     document.getElementById("table-search").addEventListener("input", renderTable);
     document.querySelectorAll("#songs-table th").forEach((th) =>
       th.addEventListener("click", () => {
