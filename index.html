@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spotify Stream Stats</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="page-head">
+    <div>
+      <h1 id="artist-name">Spotify Stream Stats</h1>
+      <p class="muted" id="freshness">Loading…</p>
+    </div>
+    <div class="head-actions">
+      <button type="button" id="notify-btn" class="ghost" hidden>Enable notifications</button>
+      <button type="button" id="bell" class="bell" aria-label="Trend alerts">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1l-2-2Z"/></svg>
+        <span class="badge" id="bell-count" hidden></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="summary card" aria-labelledby="summary-h" id="summary">
+    <h2 id="summary-h">Daily summary</h2>
+    <p class="headline" id="summary-headline">Loading…</p>
+    <div class="tiles" id="summary-tiles"></div>
+    <ul class="need-to-know" id="summary-list"></ul>
+  </section>
+
+  <section aria-labelledby="alerts-h" id="alerts">
+    <h2 id="alerts-h">Trend alerts</h2>
+    <p class="muted">Songs streaming well above or below their usual level: at least 10% off their 28-day average <em>and</em> beyond normal day-to-day swings.</p>
+    <div class="alert-list" id="alert-list"></div>
+    <details id="alert-history" hidden>
+      <summary>Earlier alerts</summary>
+      <div class="alert-list" id="alert-history-list"></div>
+    </details>
+  </section>
+
+  <div class="notice" id="history-notice" hidden></div>
+
+  <nav class="filters" aria-label="Filters">
+    <div class="segmented" role="radiogroup" aria-label="Time grain" id="grain">
+      <button role="radio" data-grain="day" aria-checked="true">Daily</button>
+      <button role="radio" data-grain="week" aria-checked="false">Weekly</button>
+      <button role="radio" data-grain="month" aria-checked="false">Monthly</button>
+      <button role="radio" data-grain="year" aria-checked="false">Yearly</button>
+    </div>
+    <label class="select">
+      <span class="muted">Songs</span>
+      <select id="type-filter">
+        <option value="all">All songs</option>
+        <option value="lead">As lead</option>
+        <option value="feature">As feature</option>
+      </select>
+    </label>
+  </nav>
+
+  <main>
+    <section aria-labelledby="overview-h">
+      <h2 id="overview-h">Overall performance</h2>
+      <div class="tiles" id="tiles"></div>
+      <div class="card">
+        <div class="card-head"><h3>Share of latest daily streams, top 10 songs</h3></div>
+        <div class="chart-box tall"><canvas id="share-chart"></canvas></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="explorer-h">
+      <h2 id="explorer-h">Song explorer</h2>
+      <p class="muted">Pick one song to analyze it, or up to five to compare them.</p>
+      <div class="picker">
+        <input id="song-search" list="song-options" placeholder="Add a song…" autocomplete="off">
+        <datalist id="song-options"></datalist>
+        <div class="chips" id="chips"></div>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <h3 id="explorer-chart-title">Streams</h3>
+          <div class="legend" id="explorer-legend"></div>
+        </div>
+        <div class="chart-box"><canvas id="explorer-chart"></canvas></div>
+      </div>
+      <div class="compare-grid" id="compare-cards"></div>
+    </section>
+
+    <section aria-labelledby="table-h">
+      <h2 id="table-h">All songs</h2>
+      <input id="table-search" class="search" placeholder="Filter by title…" autocomplete="off">
+      <div class="table-wrap">
+        <table id="songs-table">
+          <thead>
+            <tr>
+              <th data-sort="rank_total" class="num">#</th>
+              <th data-sort="title">Song</th>
+              <th data-sort="total_streams" class="num">Total</th>
+              <th data-sort="daily_streams" class="num">Daily</th>
+              <th data-sort="period_streams" class="num" id="period-col">This period</th>
+              <th data-sort="change" class="num">Change</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div class="tooltip" id="tooltip" role="status" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
