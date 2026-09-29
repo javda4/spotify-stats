@@ -23,6 +23,7 @@
     </div>
   </header>
 
+  <div id="view-dashboard">
   <section class="summary card" aria-labelledby="summary-h" id="summary">
     <h2 id="summary-h">Daily summary</h2>
     <p class="headline" id="summary-headline">Loading…</p>
@@ -64,7 +65,11 @@
       <h2 id="overview-h">Overall performance</h2>
       <div class="tiles" id="tiles"></div>
       <div class="card">
-        <div class="card-head"><h3>Share of latest daily streams, top 10 songs</h3></div>
+        <div class="card-head">
+          <h3>Share of latest daily streams, top 10 songs</h3>
+          <a href="#/share" class="more-link">All songs' share →</a>
+        </div>
+        <p class="hint">Click a bar to open that song's insights.</p>
         <div class="chart-box tall"><canvas id="share-chart"></canvas></div>
       </div>
     </section>
@@ -107,6 +112,59 @@
       </div>
     </section>
   </main>
+  </div>
+
+  <!-- Song insights page: #/song/<track_id> -->
+  <div id="view-song" hidden>
+    <a href="#/" class="back">← Dashboard</a>
+    <header class="song-head">
+      <div>
+        <h2 id="song-title">Song</h2>
+        <p class="muted" id="song-meta"></p>
+      </div>
+      <a id="song-spotify" class="ghost-link" target="_blank" rel="noopener">Open in Spotify ↗</a>
+    </header>
+    <div class="tiles" id="song-tiles"></div>
+
+    <section class="card trend-card" id="song-trend" aria-label="Current trend"></section>
+
+    <section class="card" aria-labelledby="glance-h">
+      <h3 id="glance-h">At a glance</h3>
+      <p class="hint">Current period vs the previous one, for every time scale.</p>
+      <div class="table-wrap flat"><table id="song-glance"></table></div>
+    </section>
+
+    <section class="card" aria-labelledby="song-chart-title">
+      <div class="card-head">
+        <h3 id="song-chart-title">Streams</h3>
+        <div class="segmented" role="radiogroup" aria-label="Time grain" id="song-grain">
+          <button role="radio" data-grain="day" aria-checked="true">Daily</button>
+          <button role="radio" data-grain="week" aria-checked="false">Weekly</button>
+          <button role="radio" data-grain="month" aria-checked="false">Monthly</button>
+          <button role="radio" data-grain="year" aria-checked="false">Yearly</button>
+        </div>
+      </div>
+      <div class="chart-box"><canvas id="song-chart"></canvas></div>
+      <div class="table-wrap flat scroll"><table id="song-periods"></table></div>
+    </section>
+
+    <section class="card" aria-labelledby="song-alerts-h">
+      <h3 id="song-alerts-h">Trend alert history</h3>
+      <div class="alert-list" id="song-alerts"></div>
+    </section>
+  </div>
+
+  <!-- All songs' share of daily streams: #/share -->
+  <div id="view-share" hidden>
+    <a href="#/" class="back">← Dashboard</a>
+    <h2>Share of latest daily streams</h2>
+    <p class="muted" id="share-sub"></p>
+    <div class="share-controls">
+      <input id="share-search" class="search" placeholder="Filter by title…" autocomplete="off">
+      <label class="check"><input type="checkbox" id="share-include-top"> Include top 10</label>
+    </div>
+    <div class="share-list" id="share-list" role="list"></div>
+  </div>
 
   <div class="tooltip" id="tooltip" role="status" hidden></div>
   <script src="app.js"></script>

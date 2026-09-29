@@ -116,6 +116,13 @@
       label.textContent = p.dataset.label;
       row.append(key, value, label);
       tooltipEl.append(row);
+      if (p.dataset.hint) {
+        const hint = document.createElement("div");
+        hint.className = "t-title";
+        hint.style.margin = "4px 0 0";
+        hint.textContent = p.dataset.hint(p.dataIndex);
+        tooltipEl.append(hint);
+      }
     }
     tooltipEl.hidden = false;
     const rect = chart.canvas.getBoundingClientRect();
@@ -332,7 +339,10 @@
           td.textContent = text;
           return td;
         };
-        const title = cell(s.title);
+        const title = document.createElement("td");
+        const link = el("a", { textContent: s.title, href: `#/song/${s.track_id}`, className: "song-link", title: "Open song insights" });
+        link.addEventListener("click", (e) => e.stopPropagation());
+        title.append(link);
         if (s.is_feature) {
           const tag = document.createElement("span");
           tag.className = "tag";
@@ -363,10 +373,16 @@
 
   // ---------- share chart ----------
 
-  function renderShare() {
+  /** Songs with daily streams, biggest first, and their share of the total. */
+  function shareRanking() {
     const songs = visibleSongs().filter((s) => s.daily_streams != null)
       .sort((a, b) => b.daily_streams - a.daily_streams);
     const total = songs.reduce((sum, s) => sum + s.daily_streams, 0);
+    return { songs, total, share: (s) => (total ? (100 * s.daily_streams) / total : 0) };
+  }
+
+  function renderShare() {
+    const { songs, total } = shareRanking();
     const top = songs.slice(0, 10);
     const other = total - top.reduce((sum, s) => sum + s.daily_streams, 0);
     const labels = [...top.map((s) => s.title), `Other ${songs.length - top.length} songs`];
@@ -385,10 +401,19 @@
           borderWidth: 0,
           borderSkipped: "start",
           formatValue: (v) => `${v.toFixed(1)}%`,
+          hint: (i) => (i < top.length ? "Click for song insights" : "Click to see every song's share"),
         }],
       },
       options: (() => {
         const o = baseOptions({ indexAxis: "y" });
+        // Whole row is the hit target (label, bar and the air after it), not just the painted bar.
+        o.interaction = { mode: "y", intersect: false, axis: "y" };
+        o.onHover = (evt, els) => { evt.native.target.style.cursor = els.length ? "pointer" : "default"; };
+        o.onClick = (evt, els) => {
+          if (!els.length) return;
+          const i = els[0].index;
+          location.hash = i < top.length ? `#/song/${top[i].track_id}` : "#/share";
+        };
         o.scales.x.ticks.callback = (v) => `${v}%`;
         o.scales.y.ticks.autoSkip = false;
         o.layout = { padding: { right: 48 } };
@@ -595,9 +620,7 @@
     const item = (icon, cls, ...content) =>
       items.push(el("li", {}, el("span", { className: `ico ${cls}`, textContent: icon }), el("span", {}, ...content)));
     const songLink = (s) => {
-      const b = el("b", { textContent: s.title, title: "Open in song explorer", style: "cursor:pointer" });
-      b.addEventListener("click", () => addSong(s.track_id));
-      return b;
+      return el("a", { textContent: s.title, href: `#/song/${s.track_id}`, className: "song-link" });
     };
 
     if (sum.last_scrape?.status === "error") {
@@ -641,7 +664,7 @@
     return a >= 6 ? "extremely unusual" : a >= 3 ? "very unusual" : "unusual";
   }
 
-  function alertCard(a, unread) {
+  function alertCard(a, unread, linked = true) {
     const card = el("article", { className: `alert is-${a.direction} ${a.scope}` },
       el("div", { className: "a-head" },
         el("span", { className: "a-dir", textContent: `${a.direction === "up" ? "▲ Outperforming" : "▼ Underperforming"}` }),
@@ -655,7 +678,7 @@
         el("dd", { textContent: fmtFull(a.baseline_value), title: `${a.baseline_days}-day average` }),
         el("dd", { textContent: signed(a.current_value - a.baseline_value) }),
         el("dd", { textContent: a.z_score == null ? "–" : Number(a.z_score).toFixed(1) })));
-    if (a.track_id) card.addEventListener("click", () => addSong(a.track_id));
+    if (a.track_id && linked) card.addEventListener("click", () => { location.hash = `#/song/${a.track_id}`; });
     return card;
   }
 
@@ -739,6 +762,204 @@
     renderAlerts(alerts);
   }
 
+  // ---------- song insights page (#/song/<id>) ----------
+
+  const songPage = { id: null, grain: "day", daily: [], periods: [] };
+  const DAY_MS = 864e5;
+
+  /** Latest day vs the previous ≤28 days — same rule as generate_trend_alerts. */
+  function trendOf(daily) {
+    const pts = daily.filter((d) => d.daily_streams != null);
+    const cur = pts[pts.length - 1];
+    if (!cur) return { status: "insufficient", days: 0 };
+    const from = utc(cur.snapshot_date) - 28 * DAY_MS;
+    const prior = pts.slice(0, -1).filter((d) => utc(d.snapshot_date) >= from).map((d) => d.daily_streams);
+    if (prior.length < 7) return { status: "insufficient", days: prior.length, current: cur.daily_streams };
+    const mean = prior.reduce((a, b) => a + b, 0) / prior.length;
+    const sd = Math.sqrt(prior.reduce((a, b) => a + (b - mean) ** 2, 0) / (prior.length - 1));
+    const change = mean ? (100 * (cur.daily_streams - mean)) / mean : null;
+    const z = sd ? (cur.daily_streams - mean) / sd : null;
+    const flagged = change != null && Math.abs(change) >= 10 && (z == null || Math.abs(z) >= 2);
+    return {
+      status: flagged ? (change > 0 ? "up" : "down") : "normal",
+      current: cur.daily_streams, usual: Math.round(mean), change, z, days: prior.length,
+    };
+  }
+
+  function renderTrend(t) {
+    const box = document.getElementById("song-trend");
+    const label = {
+      up: ["▲", "Outperforming its usual trend"],
+      down: ["▼", "Underperforming its usual trend"],
+      normal: ["●", "Within its usual range"],
+      insufficient: ["…", "Not enough history yet"],
+    }[t.status];
+    const detail = t.status === "insufficient"
+      ? `Trend comparison needs 7 days of history to define "usual" (${t.days} so far).`
+      : `Latest day is ${pctText(t.change)} vs its ${t.days}-day average` +
+        (t.z != null ? ` (z-score ${t.z.toFixed(1)}, ${strength(t.z)}).` : ".");
+    const num = (k, v) => el("div", {}, el("span", { textContent: k }), el("b", { textContent: v }));
+    box.replaceChildren(el("div", { className: "trend-card-body" },
+      el("h3", { textContent: "Current trend" }),
+      el("div", { className: `trend-status is-${t.status}` },
+        el("span", { className: "ico", textContent: label[0] }), el("span", { textContent: label[1] })),
+      el("div", { className: "trend-detail", textContent: detail }),
+      t.status === "insufficient" ? null : el("div", { className: "trend-nums" },
+        num("Latest day", fmtFull(t.current)),
+        num(`Usual (${t.days}-day avg)`, fmtFull(t.usual)),
+        num("Difference", signed(t.current - t.usual)),
+        num("Change", `${t.change >= 0 ? "+" : "−"}${Math.abs(t.change).toFixed(1)}%`))));
+  }
+
+  function table(tableEl, headers, rows) {
+    tableEl.replaceChildren(
+      el("thead", {}, el("tr", {}, ...headers.map(([h, cls]) => el("th", { textContent: h, className: cls ?? "" })))),
+      el("tbody", {}, ...rows.map((cells) =>
+        el("tr", {}, ...cells.map((c, i) => {
+          const td = el("td", { className: headers[i][1] ?? "" });
+          if (c instanceof Node) td.append(c); else td.textContent = c ?? "–";
+          return td;
+        })))),
+    );
+  }
+
+  function changeCell(change) {
+    if (change == null) return "–";
+    return el("span", { className: change >= 0 ? "up" : "down", textContent: `${change >= 0 ? "▲" : "▼"} ${Math.abs(change).toFixed(1)}%` });
+  }
+
+  function renderGlance(song) {
+    const d = songPage.daily.filter((x) => x.daily_streams != null);
+    const last = d[d.length - 1], prev = d[d.length - 2];
+    const rows = [["Day", last && fmtDate(last.snapshot_date), last?.daily_streams, prev?.daily_streams,
+      pct(last?.daily_streams, prev?.daily_streams), last?.daily_streams, last?.daily_streams, `#${song.rank_daily}`, last ? 1 : 0]];
+    for (const g of ["week", "month", "year"]) {
+      const ps = songPage.periods.filter((p) => p.grain === g);
+      const cur = ps[ps.length - 1], before = ps[ps.length - 2];
+      rows.push([g[0].toUpperCase() + g.slice(1), cur && fmtDate(cur.period_start, g), cur?.streams, before?.streams,
+        cur?.pct_change ?? null, cur?.avg_daily, cur?.peak_daily, cur?.period_rank ? `#${cur.period_rank}` : null, cur?.days_tracked]);
+    }
+    table(document.getElementById("song-glance"),
+      [["Scale"], ["Current period"], ["Streams", "num"], ["Previous", "num"], ["Change", "num"],
+        ["Avg / day", "num"], ["Best day", "num"], ["Rank", "num"], ["Days", "num"]],
+      rows.map(([scale, label, cur, before, change, avg, peak, rank, days]) =>
+        [scale, label ?? "No data yet", fmtFull(cur), fmtFull(before), changeCell(change), fmtFull(avg), fmtFull(peak), rank, days ?? "–"]));
+  }
+
+  function renderSongGrain() {
+    const g = songPage.grain;
+    document.querySelectorAll("#song-grain button").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.grain === g)));
+    document.getElementById("song-chart-title").textContent = `Streams per ${GRAIN_NOUN[g]}`;
+    const color = seriesColor(0);
+    if (g === "day") {
+      const d = songPage.daily;
+      draw("song-chart", {
+        type: "line",
+        data: { labels: d.map((x) => fmtDate(x.snapshot_date)), datasets: [{ label: "Daily streams", data: d.map((x) => x.daily_streams), ...lineStyle(color, d.length) }] },
+        options: baseOptions(),
+      });
+      const rows = [...d].reverse().map((x, i, arr) => [fmtDate(x.snapshot_date), fmtFull(x.daily_streams), fmtFull(x.total_streams),
+        changeCell(pct(x.daily_streams, arr[i + 1]?.daily_streams))]);
+      table(document.getElementById("song-periods"), [["Date"], ["Daily streams", "num"], ["Total streams", "num"], ["vs prior day", "num"]], rows);
+      return;
+    }
+    const ps = songPage.periods.filter((p) => p.grain === g);
+    draw("song-chart", {
+      type: "bar",
+      data: { labels: ps.map((p) => fmtDate(p.period_start, g)), datasets: [{ label: `Streams per ${g}`, data: ps.map((p) => p.streams), ...barStyle(color) }] },
+      options: baseOptions(),
+    });
+    const rows = [...ps].reverse().map((p) => [fmtDate(p.period_start, g), fmtFull(p.streams), fmtFull(p.avg_daily), fmtFull(p.peak_daily),
+      p.days_tracked, changeCell(p.pct_change), p.period_rank ? `#${p.period_rank}` : "–"]);
+    table(document.getElementById("song-periods"),
+      [[GRAIN_NOUN[g][0].toUpperCase() + GRAIN_NOUN[g].slice(1)], ["Streams", "num"], ["Avg / day", "num"], ["Best day", "num"],
+        ["Days tracked", "num"], [`vs previous ${g}`, "num"], ["Rank", "num"]], rows);
+  }
+
+  async function renderSongPage(id) {
+    const song = state.songs.find((s) => s.track_id === id);
+    const title = document.getElementById("song-title");
+    if (!song) { title.textContent = "Song not found"; return; }
+    songPage.id = id;
+    title.textContent = song.title;
+    document.title = `${song.title} · Spotify Stats`;
+    document.getElementById("song-meta").textContent =
+      `${song.is_feature ? "Featured artist" : "Lead artist"} · #${song.rank_total} by total streams · tracked since ${fmtDate(song.first_seen)}`;
+    document.getElementById("song-spotify").href = `https://open.spotify.com/track/${id}`;
+
+    const { songs, share } = shareRanking();
+    const shareRank = songs.findIndex((s) => s.track_id === id) + 1;
+    const tile = (label, value, sub) => el("div", { className: "tile" },
+      el("div", { className: "label", textContent: label }), el("div", { className: "value", textContent: value }), sub);
+    document.getElementById("song-tiles").replaceChildren(
+      tile("All-time streams", fmt(song.total_streams), el("div", { className: "delta", textContent: fmtFull(song.total_streams) })),
+      tile("Latest daily streams", fmt(song.daily_streams), deltaEl(pct(song.daily_streams, song.daily_1d_ago), "day")),
+      tile("Share of daily streams", song.daily_streams == null ? "–" : `${share(song).toFixed(2)}%`,
+        el("div", { className: "delta", textContent: shareRank ? `#${shareRank} of ${songs.length} songs` : "" })),
+      tile("Last 7 / 30 days", `${fmt(song.streams_last_7d)} / ${fmt(song.streams_last_30d)}`,
+        el("div", { className: "delta", textContent: song.streams_last_7d == null ? "Fills in as history builds" : "streams gained" })),
+    );
+
+    const [daily, periods, alerts] = await Promise.all([
+      api(`song_snapshots?track_id=eq.${id}&select=snapshot_date,total_streams,daily_streams&order=snapshot_date`),
+      api(`song_period_stats?track_id=eq.${id}&order=period_start`),
+      api(`trend_alerts?track_id=eq.${id}&order=snapshot_date.desc`),
+    ]);
+    if (songPage.id !== id) return; // navigated away meanwhile
+    Object.assign(songPage, { daily, periods });
+    renderTrend(trendOf(daily));
+    renderGlance(song);
+    renderSongGrain();
+    document.getElementById("song-alerts").replaceChildren(...(alerts.length
+      ? alerts.map((a) => alertCard(a, false, false))
+      : [el("div", { className: "empty", textContent: "No trend alerts for this song yet." })]));
+  }
+
+  // ---------- all songs' share page (#/share) ----------
+
+  function renderSharePage() {
+    const { songs, total, share } = shareRanking();
+    const includeTop = document.getElementById("share-include-top").checked;
+    const q = document.getElementById("share-search").value.trim().toLowerCase();
+    const others = songs.slice(10);
+    const otherShare = others.reduce((a, s) => a + share(s), 0);
+    document.title = "Share of daily streams · Spotify Stats";
+    document.getElementById("share-sub").textContent = includeTop
+      ? `All ${songs.length} songs with daily streams, ${fmtFull(total)} streams in total on the latest day.`
+      : `The ${others.length} songs outside the top 10 add up to ${otherShare.toFixed(1)}% of the latest day's ${fmtFull(total)} streams. Click a song for its insights.`;
+
+    const rows = songs.map((s, i) => ({ s, rank: i + 1 }))
+      .filter(({ rank }) => includeTop || rank > 10)
+      .filter(({ s }) => !q || s.title.toLowerCase().includes(q));
+    const max = Math.max(...rows.map(({ s }) => share(s)), 0.0001);
+    document.getElementById("share-list").replaceChildren(...rows.map(({ s, rank }) =>
+      el("a", { className: "share-row", href: `#/song/${s.track_id}`, role: "listitem", title: `${s.title}: ${share(s).toFixed(2)}%` },
+        el("span", { className: "rank", textContent: rank }),
+        el("span", { className: "title", textContent: s.title }),
+        el("span", { className: "track" }, el("div", { className: "bar", style: `width:${(100 * share(s)) / max}%` })),
+        el("span", { className: "pct", textContent: `${share(s) < 0.01 ? "<0.01" : share(s).toFixed(2)}%` }),
+        el("span", { className: "streams", textContent: fmtFull(s.daily_streams) }))));
+  }
+
+  // ---------- routing ----------
+
+  let dashboardScroll = 0;
+  let baseTitle = document.title;
+
+  function route() {
+    const hash = location.hash.replace(/^#\/?/, "");
+    const [page, arg] = hash.split("/");
+    const view = page === "song" && arg ? "song" : page === "share" ? "share" : "dashboard";
+    const current = ["dashboard", "song", "share"].find((v) => !document.getElementById(`view-${v}`).hidden);
+    if (current === "dashboard" && view !== "dashboard") dashboardScroll = window.scrollY;
+    for (const v of ["dashboard", "song", "share"]) document.getElementById(`view-${v}`).hidden = v !== view;
+    tooltipEl.hidden = true;
+
+    if (view === "song") { renderSongPage(arg).catch(showError); window.scrollTo(0, 0); }
+    else if (view === "share") { renderSharePage(); window.scrollTo(0, 0); }
+    else { document.title = baseTitle; window.scrollTo(0, dashboardScroll); }
+  }
+
   // ---------- wiring ----------
 
   async function renderAll() {
@@ -790,7 +1011,12 @@
       if (song) addSong(song.track_id);
       search.value = "";
     });
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { renderAll(); route(); });
+    document.querySelectorAll("#song-grain button").forEach((btn) =>
+      btn.addEventListener("click", () => { songPage.grain = btn.dataset.grain; renderSongGrain(); }));
+    document.getElementById("share-search").addEventListener("input", renderSharePage);
+    document.getElementById("share-include-top").addEventListener("change", renderSharePage);
+    window.addEventListener("hashchange", route);
   }
 
   async function init() {
@@ -806,7 +1032,8 @@
 
       const name = artists[0]?.name ?? "Artist";
       document.getElementById("artist-name").textContent = `${name} — Spotify streams`;
-      document.title = `${name} Spotify Stats`;
+      document.title = baseTitle = `${name} Spotify Stats`;
+      route(); // deep links (#/song/…, #/share) work once songs are loaded
       const first = snaps[0]?.snapshot_date;
       const last = snaps[snaps.length - 1]?.snapshot_date;
       document.getElementById("freshness").textContent = last

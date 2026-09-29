@@ -231,3 +231,50 @@ details { margin-top: 12px; }
 details summary { cursor: pointer; color: var(--text-secondary); margin-bottom: 10px; }
 .alert-day { grid-column: 1 / -1; font-size: 13px; color: var(--text-muted); margin-top: 6px; }
 .badge[hidden] { display: none; }
+
+/* ---------- song & share pages ---------- */
+.hint { color: var(--text-muted); font-size: 13px; margin: -4px 0 8px; }
+.more-link, .back, .ghost-link { color: var(--accent); text-decoration: none; font-size: 14px; }
+.more-link:hover, .back:hover, .ghost-link:hover { text-decoration: underline; }
+.back { display: inline-block; margin: 20px 0 4px; }
+.song-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.song-head h2 { margin: 4px 0 0; font-size: 24px; }
+#view-song > .card, #view-song > section { margin-top: 12px; }
+#view-song .tiles { margin-top: 12px; }
+.trend-card { display: grid; gap: 6px; }
+.trend-status { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; }
+.trend-status .ico { font-size: 18px; }
+.trend-status.is-up { color: var(--up); }
+.trend-status.is-down { color: var(--down); }
+.trend-status.is-normal, .trend-status.is-insufficient { color: var(--text-primary); }
+.trend-detail { color: var(--text-secondary); }
+.trend-nums { display: flex; flex-wrap: wrap; gap: 8px 28px; margin-top: 6px; }
+.trend-nums div { display: grid; }
+.trend-nums span { font-size: 12px; color: var(--text-muted); }
+.trend-nums b { font-variant-numeric: tabular-nums; font-size: 17px; }
+.table-wrap.flat { border: 0; border-radius: 0; background: none; }
+.table-wrap.scroll { max-height: 360px; overflow-y: auto; margin-top: 12px; }
+#song-periods tbody tr, #song-glance tbody tr { cursor: default; }
+.share-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 8px; }
+.share-controls .search { margin: 0; }
+.check { display: inline-flex; gap: 6px; align-items: center; color: var(--text-secondary); font-size: 14px; }
+.share-list { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.share-row {
+  display: grid; grid-template-columns: 40px minmax(140px, 1.3fr) minmax(80px, 1fr) 64px 90px;
+  gap: 12px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--grid);
+  color: var(--text-primary); text-decoration: none; font-size: 14px;
+}
+.share-row:last-child { border-bottom: 0; }
+.share-row:hover, .share-row:focus-visible { background: var(--page); }
+.share-row .rank { color: var(--text-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.share-row .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.share-row .track { height: 12px; }
+.share-row .bar { height: 12px; min-width: 2px; background: var(--series-1); border-radius: 0 4px 4px 0; }
+.share-row .pct, .share-row .streams { text-align: right; font-variant-numeric: tabular-nums; }
+.share-row .streams { color: var(--text-secondary); }
+@media (max-width: 560px) {
+  .share-row { grid-template-columns: 32px 1fr 56px; }
+  .share-row .track, .share-row .streams { display: none; }
+}
+.song-link { color: inherit; font-weight: 600; text-decoration: none; }
+.song-link:hover { text-decoration: underline; color: var(--accent); }
